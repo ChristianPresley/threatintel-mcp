@@ -36,7 +36,7 @@ the clean seam for this: one small server, any MCP-capable client.
 | `lookup_domain` | VirusTotal v3 | Reputation, registrar, creation date, categories for a domain. |
 | `lookup_ip` | VirusTotal v3 | Reputation + hosting context (ASN, owner, country) for an IP. |
 
-Each tool's docstring is written as a **"when to call me"** prompt — FastMCP
+Each tool's docstring is written as a **"when to call me"** prompt — the SDK
 turns the type hints and docstring into the JSON Schema and description the model
 sees, so the tools are self-documenting to the agent.
 
@@ -67,12 +67,27 @@ is defanged on the way out (`http` → `hxxp`, `evil.test` → `evil[.]test`,
 well-behaved server never trips the upstream 429 under normal single-analyst use.
 
 **Structured errors, never raw tracebacks.** Auth failures, 404s, upstream 429s,
-timeouts and local rate-limit hits are all mapped to small categorized dicts
-(`errors.py`) so the agent can decide whether to retry, back off, or ask for a
-key.
+timeouts and local rate-limit hits are all mapped to small categorized error
+envelopes (`errors.py`) so the agent can decide whether to retry, back off, or
+ask for a key. They are returned as tool results with `isError: true` (the
+envelope is the JSON text content), so clients can tell a failed lookup from a
+successful one.
+
+**Tool annotations.** Every tool declares MCP annotations: the five lookups are
+`readOnlyHint: true`; `scan_url` is not, because it submits a new scan. All are
+`openWorldHint: true` since they call third-party services.
 
 **Secrets from the environment only.** `VT_API_KEY` and `URLSCAN_API_KEY` are
 read from the environment (or a local, gitignored `.env`). Nothing is hardcoded.
+
+### MCP protocol version
+
+Built on the MCP Python SDK 2.x and targets the **2026-07-28** specification:
+stateless requests (no `initialize` handshake), `server/discover`, `resultType`
+on every result, and cacheable `tools/list` results (`ttlMs`/`cacheScope`).
+The SDK still negotiates earlier revisions (e.g. 2025-11-25) with older clients.
+Cross-call state is already explicit: `scan_url` hands back a `uuid` that you
+pass to `get_url_result`, which is the pattern the stateless spec recommends.
 
 ### Transports: stdio vs. Streamable HTTP
 
@@ -109,8 +124,22 @@ Get API keys:
 threatintel-mcp --transport stdio
 
 # Streamable HTTP (shared team) — long-lived server on a port:
-threatintel-mcp --transport http --host 0.0.0.0 --port 8000
+threatintel-mcp --transport http --host 0.0.0.0 --port 8000 \
+  --allowed-host 'ti.corp.example:*'
 ```
+
+The HTTP transport validates the `Host` and `Origin` headers to block DNS
+rebinding. Loopback names are always allowed; any other hostname clients use to
+reach the server must be listed with `--allowed-host` (repeatable), and browser
+origins with `--allowed-origin`. Requests with any other `Host` get
+`421 Misdirected Request`.
+
+> **The HTTP transport has no built-in authentication.** Anyone who can reach
+> the port can spend the org's VirusTotal/urlscan quota. For a shared
+> deployment, keep it on a private network and put it behind an authenticating
+> reverse proxy (e.g. OAuth/OIDC or mTLS), and point `--allowed-host` at the
+> proxy's hostname. The server prints a warning when bound to a non-loopback
+> address.
 
 ### Claude Desktop / MCP client config
 
