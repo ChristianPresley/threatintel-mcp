@@ -6,6 +6,8 @@ import respx
 
 from threatintel_mcp import server
 
+from ._helpers import tool_error
+
 VT_BASE = "https://www.virustotal.com/api/v3"
 
 _FILE_RESPONSE = {
@@ -56,7 +58,7 @@ async def test_lookup_hash_happy_path():
 @pytest.mark.asyncio
 async def test_lookup_hash_not_found():
     respx.get(f"{VT_BASE}/files/deadbeef").mock(return_value=httpx.Response(404))
-    result = await server.lookup_hash("deadbeef")
+    result = await tool_error(server.lookup_hash("deadbeef"))
     assert result["error"] == "not_found"
     assert result["status"] == 404
 
@@ -65,7 +67,7 @@ async def test_lookup_hash_not_found():
 @pytest.mark.asyncio
 async def test_lookup_hash_auth_error():
     respx.get(f"{VT_BASE}/files/xyz").mock(return_value=httpx.Response(401))
-    result = await server.lookup_hash("xyz")
+    result = await tool_error(server.lookup_hash("xyz"))
     assert result["error"] == "auth_error"
 
 
@@ -109,6 +111,6 @@ async def test_lookup_ip_rate_limited_upstream():
     respx.get(f"{VT_BASE}/ip_addresses/1.2.3.4").mock(
         return_value=httpx.Response(429, headers={"Retry-After": "30"})
     )
-    result = await server.lookup_ip("1.2.3.4")
+    result = await tool_error(server.lookup_ip("1.2.3.4"))
     assert result["error"] == "rate_limited"
     assert result["retry_after"] == "30"

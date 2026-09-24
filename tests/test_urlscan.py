@@ -6,6 +6,8 @@ import respx
 
 from threatintel_mcp import server
 
+from ._helpers import tool_error
+
 US_BASE = "https://urlscan.io/api/v1"
 
 
@@ -42,7 +44,7 @@ async def test_scan_url_defaults_to_unlisted():
 @respx.mock
 @pytest.mark.asyncio
 async def test_scan_url_rejects_bad_visibility():
-    result = await server.scan_url("http://x.test", visibility="semi-public")
+    result = await tool_error(server.scan_url("http://x.test", visibility="semi-public"))
     assert result["error"] == "bad_request"
 
 
@@ -50,7 +52,7 @@ async def test_scan_url_rejects_bad_visibility():
 @pytest.mark.asyncio
 async def test_get_url_result_pending_when_404():
     respx.get(f"{US_BASE}/result/abc/").mock(return_value=httpx.Response(404))
-    result = await server.get_url_result("abc")
+    result = await tool_error(server.get_url_result("abc"))
     assert result["error"] == "pending"
 
 
